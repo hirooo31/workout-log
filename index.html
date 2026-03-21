@@ -845,20 +845,15 @@ function renderStats() {
   const keys = Object.keys(data);
 
   const totalDays = keys.length;
-  let totalExercises = 0;
-  let totalSets = 0;
   const freqMap = {};
 
   for (const key of keys) {
     for (const ex of data[key]) {
-      totalExercises++;
-      const validSets = (ex.sets||[]).filter(s=>s.reps||s.weight);
-      totalSets += validSets.length;
       freqMap[ex.name] = (freqMap[ex.name] || 0) + 1;
     }
   }
 
-  const top = Object.entries(freqMap).sort((a,b)=>b[1]-a[1]).slice(0,8);
+  const top = Object.entries(freqMap).sort((a,b)=>b[1]-a[1]).slice(0,3);
   const maxFreq = top[0]?.[1] || 1;
 
   // streak
@@ -937,20 +932,7 @@ function renderStats() {
         <div class="stats-card-sub">日連続 🔥</div>
       </div>
     </div>
-    <div class="stats-grid">
-      <div class="stats-card">
-        <div class="stats-card-title">合計種目数</div>
-        <div class="stats-card-value stats-small">${totalExercises}</div>
-        <div class="stats-card-sub">エクサイズ</div>
-      </div>
-      <div class="stats-card">
-        <div class="stats-card-title">合計セット数</div>
-        <div class="stats-card-value stats-small">${totalSets}</div>
-        <div class="stats-card-sub">セット</div>
-      </div>
-    </div>
-
-    ${top.length ? `
+${top.length ? `
     <div class="stats-card">
       <div class="stats-card-title">よくやる種目</div>
       ${top.map(([name, count]) => `
