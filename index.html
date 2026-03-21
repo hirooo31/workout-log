@@ -185,6 +185,11 @@
     }
     .form-input:focus { border-color: var(--accent); }
 
+    /* Date input color fix */
+    input[type="date"].form-input::-webkit-calendar-picker-indicator {
+      filter: invert(0.7);
+    }
+
     .quick-tags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
     .quick-tag {
       background: var(--surface2); border: 1px solid var(--border);
@@ -244,6 +249,37 @@
       min-width: 4px; transition: width 0.3s;
     }
     .freq-count { font-size: 13px; color: var(--muted); }
+
+    /* ===== WEEKLY GRID ===== */
+    .week-grid {
+      display: flex; gap: 4px; margin-top: 12px;
+    }
+    .week-day-cell {
+      flex: 1; display: flex; flex-direction: column; align-items: center; gap: 4px;
+    }
+    .week-day-label { font-size: 10px; color: var(--muted); }
+    .week-day-dot {
+      width: 30px; height: 30px; border-radius: 50%;
+      background: var(--surface2); border: 1.5px solid var(--border);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 11px; color: var(--muted);
+    }
+    .week-day-dot.trained {
+      background: var(--accent); color: #000; border-color: var(--accent); font-weight: 700;
+    }
+    .week-day-dot.today-ring {
+      border-color: var(--accent);
+    }
+
+    /* ===== BACKUP/IMPORT ===== */
+    .backup-btns { display: flex; gap: 8px; margin-top: 8px; }
+    .btn-backup {
+      flex: 1; padding: 11px; border-radius: 10px; font-size: 14px;
+      font-weight: 600; cursor: pointer; border: 1px solid var(--border);
+      background: var(--surface2);
+    }
+    .btn-export { color: var(--accent); }
+    .btn-import { color: var(--text); }
   </style>
 </head>
 <body>
@@ -311,6 +347,11 @@
     <div class="modal-title" id="modal-title">種目を追加</div>
 
     <div class="form-group">
+      <label class="form-label">日付</label>
+      <input class="form-input" id="input-date" type="date">
+    </div>
+
+    <div class="form-group">
       <label class="form-label">種目名</label>
       <input class="form-input" id="input-name" type="text" placeholder="例: ベンチプレス">
       <div class="quick-tags" id="quick-tags"></div>
@@ -336,6 +377,9 @@
   </div>
 </div>
 
+<!-- Hidden file input for import -->
+<input type="file" id="import-file-input" accept=".json" style="display:none" onchange="handleImportFile(this)">
+
 <script>
 // ===== DATA =====
 const STORAGE_KEY = 'workout_log_v1';
@@ -351,6 +395,10 @@ function saveData(data) {
 
 function todayKey() {
   const d = new Date();
+  return dateToKey(d);
+}
+
+function dateToKey(d) {
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
 }
 
@@ -359,6 +407,16 @@ function formatDateJP(key) {
   const date = new Date(+y, +m-1, +d);
   const days = ['日','月','火','水','木','金','土'];
   return `${y}年${+m}月${+d}日（${days[date.getDay()]}）`;
+}
+
+// Returns the Monday of the week containing `date`
+function getMondayOfWeek(date) {
+  const d = new Date(date);
+  d.setHours(0, 0, 0, 0);
+  const day = d.getDay(); // 0=Sun
+  const diff = (day === 0) ? -6 : 1 - day;
+  d.setDate(d.getDate() + diff);
+  return d;
 }
 
 // ===== QUICK TAGS =====
@@ -372,17 +430,25 @@ const QUICK_EXERCISES = [
 let editingDate = null;
 let editingIndex = null;
 
-function openAddModal(date = null, idx = null) {
-  editingDate = date || todayKey();
+function openAddModal(date, idx) {
+  date = date || todayKey();
+  idx = (idx !== undefined && idx !== null) ? idx : null;
+  editingDate = date;
   editingIndex = idx;
 
   document.getElementById('modal-title').textContent = idx !== null ? '種目を編集' : '種目を追加';
+  document.getElementById('input-date').value = date;
 
   // Quick tags
   const qt = document.getElementById('quick-tags');
-  qt.innerHTML = QUICK_EXERCISES.map(e =>
-    `<button class="quick-tag" onclick="selectQuickTag(this,'${e}')">${e}</button>`
-  ).join('');
+  qt.innerHTML = '';
+  QUICK_EXERCISES.forEach(e => {
+    const btn = document.createElement('button');
+    btn.className = 'quick-tag';
+    btn.textContent = e;
+    btn.addEventListener('click', () => selectQuickTag(btn, e));
+    qt.appendChild(btn);
+  });
 
   let name = '', memo = '';
   let sets = [{reps:'',weight:''}];
@@ -397,7 +463,6 @@ function openAddModal(date = null, idx = null) {
   document.getElementById('input-memo').value = memo;
   renderSetRows(sets);
 
-  // Highlight quick tag if name matches
   if (name) {
     qt.querySelectorAll('.quick-tag').forEach(btn => {
       if (btn.textContent === name) btn.classList.add('selected');
@@ -430,13 +495,45 @@ function renderSetRows(sets) {
     const row = document.createElement('div');
     row.className = 'set-row';
     row.dataset.idx = i;
-    row.innerHTML = `
-      <span class="set-num">${i+1}</span>
-      <input class="form-input" type="number" inputmode="decimal" placeholder="回数" value="${s.reps}" min="1" style="text-align:center">
-      <span style="color:var(--muted);font-size:13px">×</span>
-      <input class="form-input" type="number" inputmode="decimal" placeholder="kg" value="${s.weight}" min="0" step="0.5" style="text-align:center">
-      <button class="remove-set" onclick="removeSetRow(${i})" title="削除">×</button>
-    `;
+
+    const numSpan = document.createElement('span');
+    numSpan.className = 'set-num';
+    numSpan.textContent = i + 1;
+
+    const repsInput = document.createElement('input');
+    repsInput.className = 'form-input';
+    repsInput.type = 'number';
+    repsInput.inputMode = 'decimal';
+    repsInput.placeholder = '回数';
+    repsInput.value = s.reps;
+    repsInput.min = '1';
+    repsInput.style.textAlign = 'center';
+
+    const sep = document.createElement('span');
+    sep.style.cssText = 'color:var(--muted);font-size:13px';
+    sep.textContent = '×';
+
+    const weightInput = document.createElement('input');
+    weightInput.className = 'form-input';
+    weightInput.type = 'number';
+    weightInput.inputMode = 'decimal';
+    weightInput.placeholder = 'kg';
+    weightInput.value = s.weight;
+    weightInput.min = '0';
+    weightInput.step = '0.5';
+    weightInput.style.textAlign = 'center';
+
+    const removeBtn = document.createElement('button');
+    removeBtn.className = 'remove-set';
+    removeBtn.title = '削除';
+    removeBtn.textContent = '×';
+    removeBtn.addEventListener('click', () => removeSetRow(i));
+
+    row.appendChild(numSpan);
+    row.appendChild(repsInput);
+    row.appendChild(sep);
+    row.appendChild(weightInput);
+    row.appendChild(removeBtn);
     area.appendChild(row);
   });
 }
@@ -466,11 +563,26 @@ function saveExercise() {
   const name = document.getElementById('input-name').value.trim();
   if (!name) { document.getElementById('input-name').focus(); return; }
 
+  const newDate = document.getElementById('input-date').value;
+  if (!newDate || !/^\d{4}-\d{2}-\d{2}$/.test(newDate)) {
+    document.getElementById('input-date').focus(); return;
+  }
+
   const sets = getSetRowsData().filter(s => s.reps || s.weight);
   if (!sets.length) sets.push({ reps: '', weight: '' });
 
   const memo = document.getElementById('input-memo').value.trim();
   const data = loadData();
+
+  // Remove from old date if editing and date changed
+  if (editingIndex !== null && newDate !== editingDate) {
+    if (data[editingDate]) {
+      data[editingDate].splice(editingIndex, 1);
+      if (!data[editingDate].length) delete data[editingDate];
+    }
+    editingDate = newDate;
+    editingIndex = null; // treat as new entry at new date
+  }
 
   if (!data[editingDate]) data[editingDate] = [];
 
@@ -505,9 +617,10 @@ function deleteExercise(date, idx) {
 function formatSets(sets) {
   if (!sets?.length) return '';
   return sets.filter(s => s.reps || s.weight).map(s => {
-    if (s.reps && s.weight) return `<span>${s.reps}回</span> × <span>${s.weight}kg</span>`;
-    if (s.reps) return `<span>${s.reps}回</span>`;
-    if (s.weight) return `<span>${s.weight}kg</span>`;
+    const r = esc(s.reps), w = esc(s.weight);
+    if (s.reps && s.weight) return `<span>${r}回</span> × <span>${w}kg</span>`;
+    if (s.reps) return `<span>${r}回</span>`;
+    if (s.weight) return `<span>${w}kg</span>`;
     return '';
   }).filter(Boolean).join('　');
 }
@@ -516,7 +629,7 @@ function formatSetsShort(sets) {
   if (!sets?.length) return '';
   const valid = sets.filter(s => s.reps || s.weight);
   if (!valid.length) return '';
-  return valid.map(s => [s.reps ? s.reps+'回' : '', s.weight ? s.weight+'kg' : ''].filter(Boolean).join('×')).join('  ');
+  return valid.map(s => [s.reps ? esc(s.reps)+'回' : '', s.weight ? esc(s.weight)+'kg' : ''].filter(Boolean).join('×')).join('  ');
 }
 
 // ===== RENDER TODAY =====
@@ -528,32 +641,79 @@ function renderToday() {
   document.getElementById('today-date-label').textContent = formatDateJP(key);
 
   const container = document.getElementById('today-exercises');
+
   if (!exercises.length) {
-    container.innerHTML = `<div class="empty-state"><div class="emoji">💪</div><p>まだ種目がありません。<br>「種目を追加」から今日のトレーニングを記録しましょう！</p></div>`;
+    container.innerHTML = '';
+    const empty = document.createElement('div');
+    empty.className = 'empty-state';
+    empty.innerHTML = '<div class="emoji">💪</div>';
+    const p = document.createElement('p');
+    p.textContent = 'まだ種目がありません。「種目を追加」から今日のトレーニングを記録しましょう！';
+    empty.appendChild(p);
+    container.appendChild(empty);
     return;
   }
 
-  container.innerHTML = exercises.map((ex, i) => `
-    <div class="exercise-card">
-      <div class="card-actions">
-        <button onclick="openAddModal('${key}',${i})" title="編集">
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
-        </button>
-        <button onclick="deleteExercise('${key}',${i})" title="削除">
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/></svg>
-        </button>
-      </div>
-      <div class="exercise-card-header">
-        <div class="exercise-name">${esc(ex.name)}</div>
-      </div>
-      <div class="exercise-sets">${
-        (ex.sets||[]).filter(s=>s.reps||s.weight).map((s,si)=>`
-          <div class="set-pill">${si+1}set　<span>${s.reps?s.reps+'回':'-'}　${s.weight?s.weight+'kg':''}</span></div>
-        `).join('') || '<div style="font-size:13px;color:var(--muted)">セット未登録</div>'
-      }</div>
-      ${ex.memo ? `<div class="exercise-memo">${esc(ex.memo)}</div>` : ''}
-    </div>
-  `).join('');
+  container.innerHTML = '';
+  exercises.forEach((ex, i) => {
+    const card = document.createElement('div');
+    card.className = 'exercise-card';
+
+    const actions = document.createElement('div');
+    actions.className = 'card-actions';
+
+    const editBtn = document.createElement('button');
+    editBtn.title = '編集';
+    editBtn.innerHTML = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>';
+    editBtn.addEventListener('click', () => openAddModal(key, i));
+
+    const delBtn = document.createElement('button');
+    delBtn.title = '削除';
+    delBtn.innerHTML = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/></svg>';
+    delBtn.addEventListener('click', () => deleteExercise(key, i));
+
+    actions.appendChild(editBtn);
+    actions.appendChild(delBtn);
+
+    const header = document.createElement('div');
+    header.className = 'exercise-card-header';
+    const nameEl = document.createElement('div');
+    nameEl.className = 'exercise-name';
+    nameEl.textContent = ex.name;
+    header.appendChild(nameEl);
+
+    const setsEl = document.createElement('div');
+    setsEl.className = 'exercise-sets';
+    const validSets = (ex.sets || []).filter(s => s.reps || s.weight);
+    if (validSets.length) {
+      validSets.forEach((s, si) => {
+        const pill = document.createElement('div');
+        pill.className = 'set-pill';
+        const reps = s.reps ? esc(s.reps) + '回' : '-';
+        const weight = s.weight ? esc(s.weight) + 'kg' : '';
+        pill.innerHTML = `${si+1}set　<span>${reps}　${weight}</span>`;
+        setsEl.appendChild(pill);
+      });
+    } else {
+      const none = document.createElement('div');
+      none.style.cssText = 'font-size:13px;color:var(--muted)';
+      none.textContent = 'セット未登録';
+      setsEl.appendChild(none);
+    }
+
+    card.appendChild(actions);
+    card.appendChild(header);
+    card.appendChild(setsEl);
+
+    if (ex.memo) {
+      const memo = document.createElement('div');
+      memo.className = 'exercise-memo';
+      memo.textContent = ex.memo;
+      card.appendChild(memo);
+    }
+
+    container.appendChild(card);
+  });
 }
 
 // ===== RENDER HISTORY =====
@@ -565,11 +725,18 @@ function renderHistory() {
   const container = document.getElementById('history-list');
 
   if (!keys.length) {
-    container.innerHTML = `<div class="empty-state"><div class="emoji">📋</div><p>まだ記録がありません</p></div>`;
+    container.innerHTML = '';
+    const empty = document.createElement('div');
+    empty.className = 'empty-state';
+    empty.innerHTML = '<div class="emoji">📋</div>';
+    const p = document.createElement('p');
+    p.textContent = 'まだ記録がありません';
+    empty.appendChild(p);
+    container.appendChild(empty);
     return;
   }
 
-  let html = '';
+  container.innerHTML = '';
   let found = false;
 
   for (const key of keys) {
@@ -581,35 +748,95 @@ function renderHistory() {
     if (!filtered.length) continue;
     found = true;
 
-    html += `<div class="history-day">
-      <div class="history-day-header">
-        <span class="history-day-date">${formatDateJP(key)}</span>
-        <span class="history-day-count">${filtered.length}種目</span>
-      </div>
-      ${filtered.map((ex, i) => {
-        const realIdx = exercises.indexOf(ex);
-        const nameHtml = query
-          ? esc(ex.name).replace(new RegExp(esc(query),'gi'), m=>`<mark class="search-highlight">${m}</mark>`)
-          : esc(ex.name);
-        return `
-          <div class="history-exercise-row" onclick="openAddModal('${key}',${realIdx})">
-            <div class="history-exercise-name">${nameHtml}</div>
-            <div class="history-exercise-detail">
-              ${ex.sets?.filter(s=>s.reps||s.weight).length ? formatSetsShort(ex.sets) : 'セット未登録'}
-              ${ex.memo ? '　📝 ' + esc(ex.memo) : ''}
-            </div>
-          </div>
-        `;
-      }).join('')}
-    </div>`;
+    const dayEl = document.createElement('div');
+    dayEl.className = 'history-day';
+
+    const dayHeader = document.createElement('div');
+    dayHeader.className = 'history-day-header';
+    const dateSpan = document.createElement('span');
+    dateSpan.className = 'history-day-date';
+    dateSpan.textContent = formatDateJP(key);
+    const countSpan = document.createElement('span');
+    countSpan.className = 'history-day-count';
+    countSpan.textContent = filtered.length + '種目';
+    dayHeader.appendChild(dateSpan);
+    dayHeader.appendChild(countSpan);
+    dayEl.appendChild(dayHeader);
+
+    filtered.forEach(ex => {
+      const realIdx = exercises.indexOf(ex);
+      const row = document.createElement('div');
+      row.className = 'history-exercise-row';
+      row.addEventListener('click', () => openAddModal(key, realIdx));
+
+      const nameEl = document.createElement('div');
+      nameEl.className = 'history-exercise-name';
+
+      if (query) {
+        // Highlight matching text safely using text node + mark element
+        const lowerName = ex.name.toLowerCase();
+        const lowerQuery = query.toLowerCase();
+        let lastIdx = 0;
+        let pos;
+        const frag = document.createDocumentFragment();
+        while ((pos = lowerName.indexOf(lowerQuery, lastIdx)) !== -1) {
+          if (pos > lastIdx) frag.appendChild(document.createTextNode(ex.name.slice(lastIdx, pos)));
+          const mark = document.createElement('mark');
+          mark.className = 'search-highlight';
+          mark.textContent = ex.name.slice(pos, pos + query.length);
+          frag.appendChild(mark);
+          lastIdx = pos + query.length;
+        }
+        if (lastIdx < ex.name.length) frag.appendChild(document.createTextNode(ex.name.slice(lastIdx)));
+        nameEl.appendChild(frag);
+      } else {
+        nameEl.textContent = ex.name;
+      }
+
+      const detailEl = document.createElement('div');
+      detailEl.className = 'history-exercise-detail';
+      const setsText = ex.sets?.filter(s=>s.reps||s.weight).length
+        ? ex.sets.filter(s=>s.reps||s.weight).map(s => [s.reps ? s.reps+'回' : '', s.weight ? s.weight+'kg' : ''].filter(Boolean).join('×')).join('  ')
+        : 'セット未登録';
+      detailEl.textContent = setsText + (ex.memo ? '　📝 ' + ex.memo : '');
+
+      row.appendChild(nameEl);
+      row.appendChild(detailEl);
+      dayEl.appendChild(row);
+    });
+
+    container.appendChild(dayEl);
   }
 
   if (!found) {
-    container.innerHTML = `<div class="empty-state"><div class="emoji">🔍</div><p>「${esc(query)}」に一致する記録が見つかりませんでした</p></div>`;
-    return;
+    container.innerHTML = '';
+    const empty = document.createElement('div');
+    empty.className = 'empty-state';
+    empty.innerHTML = '<div class="emoji">🔍</div>';
+    const p = document.createElement('p');
+    p.textContent = `「${query}」に一致する記録が見つかりませんでした`;
+    empty.appendChild(p);
+    container.appendChild(empty);
   }
+}
 
-  container.innerHTML = html;
+// ===== VOLUME CALCULATION =====
+function calcVolume(dataSubset) {
+  let vol = 0;
+  for (const exList of Object.values(dataSubset)) {
+    for (const ex of exList) {
+      for (const s of (ex.sets || [])) {
+        const r = parseFloat(s.reps) || 0;
+        const w = parseFloat(s.weight) || 0;
+        if (r > 0 && w > 0) vol += r * w;
+      }
+    }
+  }
+  return Math.round(vol * 10) / 10;
+}
+
+function fmtNum(n) {
+  return n.toLocaleString('ja-JP');
 }
 
 // ===== RENDER STATS =====
@@ -636,16 +863,68 @@ function renderStats() {
 
   // streak
   let streak = 0;
-  const d = new Date();
+  const sd = new Date();
   while (true) {
-    const k = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+    const k = dateToKey(sd);
     if (!data[k]) break;
     streak++;
-    d.setDate(d.getDate() - 1);
+    sd.setDate(sd.getDate() - 1);
   }
 
+  // Weekly stats (Monday-start)
+  const today = new Date();
+  const monday = getMondayOfWeek(today);
+  const todayKeyStr = todayKey();
+  const WEEK_LABELS = ['月','火','水','木','金','土','日'];
+  const weekKeys = [];
+  for (let i = 0; i < 7; i++) {
+    const d = new Date(monday);
+    d.setDate(d.getDate() + i);
+    weekKeys.push(dateToKey(d));
+  }
+  const weekTrainingDays = weekKeys.filter(k => data[k]).length;
+
+  // Volume stats
+  const weekData = {};
+  for (const k of weekKeys) { if (data[k]) weekData[k] = data[k]; }
+  const weekVolume = calcVolume(weekData);
+  const totalVolume = calcVolume(data);
+
   const area = document.getElementById('stats-area');
+
+  // Build weekly grid
+  const weekGridHTML = weekKeys.map((k, i) => {
+    const trained = !!data[k];
+    const isToday = k === todayKeyStr;
+    const dotClass = ['week-day-dot', trained ? 'trained' : '', isToday && !trained ? 'today-ring' : ''].filter(Boolean).join(' ');
+    return `
+      <div class="week-day-cell">
+        <div class="${dotClass}">${trained ? '✓' : ''}</div>
+        <div class="week-day-label">${WEEK_LABELS[i]}</div>
+      </div>
+    `;
+  }).join('');
+
   area.innerHTML = `
+    <div class="stats-card">
+      <div class="stats-card-title">今週のトレーニング（月〜日）</div>
+      <div class="stats-card-value stats-small">${weekTrainingDays}<span style="font-size:16px;font-weight:400;color:var(--muted)"> / 7回</span></div>
+      <div class="week-grid">${weekGridHTML}</div>
+    </div>
+
+    <div class="stats-grid">
+      <div class="stats-card">
+        <div class="stats-card-title">今週のボリューム</div>
+        <div class="stats-card-value stats-small">${fmtNum(weekVolume)}</div>
+        <div class="stats-card-sub">kg</div>
+      </div>
+      <div class="stats-card">
+        <div class="stats-card-title">累計ボリューム</div>
+        <div class="stats-card-value stats-small">${fmtNum(totalVolume)}</div>
+        <div class="stats-card-sub">kg</div>
+      </div>
+    </div>
+
     <div class="stats-grid">
       <div class="stats-card">
         <div class="stats-card-title">トレーニング日数</div>
@@ -684,7 +963,71 @@ function renderStats() {
         </div>
       `).join('')}
     </div>` : `<div class="empty-state"><div class="emoji">📊</div><p>まだデータがありません</p></div>`}
+
+    <div class="stats-card">
+      <div class="stats-card-title">バックアップ・インポート</div>
+      <div style="font-size:13px;color:var(--muted);margin-bottom:4px">データをJSONファイルで保存・復元できます</div>
+      <div class="backup-btns">
+        <button class="btn-backup btn-export" onclick="exportData()">⬇ エクスポート</button>
+        <button class="btn-backup btn-import" onclick="document.getElementById('import-file-input').click()">⬆ インポート</button>
+      </div>
+    </div>
   `;
+}
+
+// ===== BACKUP / IMPORT =====
+function exportData() {
+  const data = loadData();
+  const json = JSON.stringify(data, null, 2);
+  const blob = new Blob([json], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'workout-log-' + todayKey() + '.json';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+function handleImportFile(input) {
+  const file = input.files[0];
+  if (!file) return;
+  input.value = '';
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    try {
+      const imported = JSON.parse(e.target.result);
+      if (!isValidWorkoutData(imported)) throw new Error('invalid');
+      const count = Object.keys(imported).length;
+      if (!confirm(count + '日分のデータが見つかりました。現在のデータと統合してインポートしますか？\n（同じ日のデータはインポート側で上書きされます）')) return;
+      const existing = loadData();
+      const merged = Object.assign({}, existing, imported);
+      saveData(merged);
+      renderToday();
+      renderHistory();
+      renderStats();
+      alert('インポートが完了しました（' + count + '日分）');
+    } catch {
+      alert('ファイルの読み込みに失敗しました。有効なバックアップJSONファイルを選択してください。');
+    }
+  };
+  reader.readAsText(file);
+}
+
+function isValidWorkoutData(obj) {
+  if (typeof obj !== 'object' || obj === null || Array.isArray(obj)) return false;
+  for (const [key, val] of Object.entries(obj)) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(key)) return false;
+    if (!Array.isArray(val)) return false;
+    for (const ex of val) {
+      if (typeof ex !== 'object' || ex === null) return false;
+      if (typeof ex.name !== 'string' || ex.name.length > 200) return false;
+      if (ex.memo !== undefined && typeof ex.memo !== 'string') return false;
+      if (ex.sets !== undefined && !Array.isArray(ex.sets)) return false;
+    }
+  }
+  return true;
 }
 
 // ===== TABS =====
@@ -699,7 +1042,7 @@ function switchTab(name) {
 
 // ===== UTILS =====
 function esc(str) {
-  return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  return String(str ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
 // ===== INIT =====
