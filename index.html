@@ -2,6 +2,8 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'none';">
+
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -371,7 +373,7 @@
 
     <div class="form-group">
       <label class="form-label">メモ</label>
-      <input class="form-input" id="input-memo" type="text" placeholder="体調・気づきなど">
+      <input class="form-input" id="input-memo" type="text" placeholder="体調 / 気づき / 有酸素運動の内容など">
     </div>
 
     <div class="modal-actions">
@@ -569,6 +571,13 @@ function saveExercise() {
 
   const newDate = document.getElementById('input-date').value;
   if (!newDate || !/^\d{4}-\d{2}-\d{2}$/.test(newDate)) {
+    document.getElementById('input-date').focus(); return;
+  }
+  // Semantic date check (e.g. reject 2025-13-99)
+  const [dy, dm, dd] = newDate.split('-').map(Number);
+  const dateObj = new Date(dy, dm - 1, dd);
+  if (dateObj.getFullYear() !== dy || dateObj.getMonth() !== dm - 1 || dateObj.getDate() !== dd) {
+    alert('有効な日付を入力してください');
     document.getElementById('input-date').focus(); return;
   }
 
@@ -1026,10 +1035,18 @@ async function exportData() {
   URL.revokeObjectURL(url);
 }
 
+const MAX_IMPORT_BYTES = 2 * 1024 * 1024; // 2MB
+const MAX_IMPORT_DAYS = 3650;            // ~10年分
+const MAX_ENTRIES_PER_DAY = 50;
+
 function handleImportFile(input) {
   const file = input.files[0];
   if (!file) return;
   input.value = '';
+  if (file.size > MAX_IMPORT_BYTES) {
+    alert('ファイルサイズが大きすぎます（上限2MB）');
+    return;
+  }
   const reader = new FileReader();
   reader.onload = (e) => {
     try {
@@ -1053,14 +1070,27 @@ function handleImportFile(input) {
 
 function isValidWorkoutData(obj) {
   if (typeof obj !== 'object' || obj === null || Array.isArray(obj)) return false;
+  if (Object.keys(obj).length > MAX_IMPORT_DAYS) return false;
   for (const [key, val] of Object.entries(obj)) {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(key)) return false;
+    // Semantic date check
+    const [dy, dm, dd] = key.split('-').map(Number);
+    const d = new Date(dy, dm - 1, dd);
+    if (d.getFullYear() !== dy || d.getMonth() !== dm - 1 || d.getDate() !== dd) return false;
     if (!Array.isArray(val)) return false;
+    if (val.length > MAX_ENTRIES_PER_DAY) return false;
     for (const ex of val) {
       if (typeof ex !== 'object' || ex === null) return false;
       if (typeof ex.name !== 'string' || ex.name.length > 200) return false;
-      if (ex.memo !== undefined && typeof ex.memo !== 'string') return false;
-      if (ex.sets !== undefined && !Array.isArray(ex.sets)) return false;
+      if (ex.memo !== undefined && (typeof ex.memo !== 'string' || ex.memo.length > 1000)) return false;
+      if (ex.sets !== undefined) {
+        if (!Array.isArray(ex.sets) || ex.sets.length > 50) return false;
+        for (const s of ex.sets) {
+          if (typeof s !== 'object' || s === null) return false;
+          if (s.reps !== undefined && String(s.reps).length > 10) return false;
+          if (s.weight !== undefined && String(s.weight).length > 10) return false;
+        }
+      }
     }
   }
   return true;
@@ -1078,7 +1108,7 @@ function switchTab(name) {
 
 // ===== UTILS =====
 function esc(str) {
-  return String(str ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  return String(str ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
 }
 
 // ===== INIT =====
