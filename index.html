@@ -1,0 +1,709 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="theme-color" content="#0a0a0a">
+  <title>Workout Log</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #0a0a0a;
+      --surface: #141414;
+      --surface2: #1e1e1e;
+      --border: #2a2a2a;
+      --accent: #6ee7b7;
+      --accent2: #34d399;
+      --text: #f0f0f0;
+      --muted: #888;
+      --danger: #f87171;
+      --radius: 12px;
+    }
+
+    html, body {
+      height: 100%;
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, 'Helvetica Neue', sans-serif;
+      font-size: 15px;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    /* ===== LAYOUT ===== */
+    #app { display: flex; flex-direction: column; height: 100vh; height: 100dvh; }
+
+    .tab-bar {
+      display: flex;
+      background: var(--surface);
+      border-top: 1px solid var(--border);
+      padding-bottom: env(safe-area-inset-bottom);
+      flex-shrink: 0;
+      order: 99;
+    }
+    .tab-bar button {
+      flex: 1; display: flex; flex-direction: column; align-items: center;
+      gap: 3px; padding: 10px 0; background: none; border: none;
+      color: var(--muted); cursor: pointer; font-size: 10px;
+      transition: color 0.15s;
+    }
+    .tab-bar button.active { color: var(--accent); }
+    .tab-bar button svg { width: 22px; height: 22px; }
+
+    .screen { display: none; flex-direction: column; flex: 1; overflow: hidden; }
+    .screen.active { display: flex; }
+
+    .screen-header {
+      padding: 16px 16px 12px;
+      padding-top: calc(16px + env(safe-area-inset-top));
+      background: var(--bg);
+      border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
+    }
+    .screen-header h1 { font-size: 22px; font-weight: 700; }
+    .screen-header .sub { color: var(--muted); font-size: 13px; margin-top: 2px; }
+
+    .scroll-area { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; padding: 12px 16px; }
+
+    /* ===== TODAY SCREEN ===== */
+    .date-chip {
+      display: inline-flex; align-items: center; gap: 6px;
+      background: var(--surface2); border-radius: 20px;
+      padding: 4px 12px; font-size: 13px; color: var(--muted);
+      margin-bottom: 16px;
+    }
+
+    .exercise-card {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--radius); padding: 14px; margin-bottom: 10px;
+      position: relative;
+    }
+    .exercise-card-header {
+      display: flex; justify-content: space-between; align-items: flex-start;
+    }
+    .exercise-name { font-size: 16px; font-weight: 600; }
+    .exercise-tag {
+      font-size: 11px; background: rgba(110,231,183,0.12); color: var(--accent);
+      border-radius: 6px; padding: 2px 7px;
+    }
+    .exercise-sets { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+    .set-pill {
+      background: var(--surface2); border-radius: 8px;
+      padding: 4px 10px; font-size: 13px; color: var(--text);
+    }
+    .set-pill span { color: var(--accent); font-weight: 600; }
+    .exercise-memo {
+      margin-top: 8px; font-size: 13px; color: var(--muted);
+      border-left: 2px solid var(--border); padding-left: 8px;
+    }
+    .card-actions {
+      position: absolute; top: 10px; right: 10px;
+      display: flex; gap: 4px;
+    }
+    .card-actions button {
+      background: none; border: none; cursor: pointer; padding: 4px;
+      color: var(--muted); border-radius: 6px;
+    }
+    .card-actions button:hover { color: var(--danger); background: rgba(248,113,113,0.1); }
+
+    .add-btn {
+      width: 100%; padding: 14px; background: var(--surface);
+      border: 2px dashed var(--border); border-radius: var(--radius);
+      color: var(--accent); font-size: 15px; font-weight: 600;
+      cursor: pointer; display: flex; align-items: center; justify-content: center;
+      gap: 8px; transition: background 0.15s, border-color 0.15s;
+    }
+    .add-btn:active { background: var(--surface2); border-color: var(--accent); }
+
+    .empty-state {
+      text-align: center; padding: 48px 24px; color: var(--muted);
+    }
+    .empty-state .emoji { font-size: 48px; margin-bottom: 12px; }
+    .empty-state p { font-size: 14px; line-height: 1.6; }
+
+    /* ===== HISTORY SCREEN ===== */
+    .search-box {
+      display: flex; align-items: center; gap: 8px;
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 10px; padding: 8px 12px; margin-bottom: 14px;
+    }
+    .search-box svg { color: var(--muted); flex-shrink: 0; }
+    .search-box input {
+      background: none; border: none; outline: none;
+      color: var(--text); font-size: 15px; flex: 1;
+    }
+    .search-box input::placeholder { color: var(--muted); }
+
+    .history-day {
+      margin-bottom: 20px;
+    }
+    .history-day-header {
+      display: flex; justify-content: space-between; align-items: center;
+      margin-bottom: 8px;
+    }
+    .history-day-date { font-weight: 700; font-size: 15px; }
+    .history-day-count {
+      font-size: 12px; color: var(--muted);
+      background: var(--surface2); border-radius: 10px; padding: 2px 8px;
+    }
+    .history-exercise-row {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 10px; padding: 10px 14px; margin-bottom: 6px;
+      cursor: pointer; transition: border-color 0.15s;
+    }
+    .history-exercise-row:active { border-color: var(--accent); }
+    .history-exercise-name { font-weight: 600; font-size: 14px; }
+    .history-exercise-detail { font-size: 12px; color: var(--muted); margin-top: 3px; }
+
+    .search-highlight { background: rgba(110,231,183,0.25); border-radius: 3px; }
+
+    /* ===== MODAL ===== */
+    .modal-overlay {
+      display: none; position: fixed; inset: 0; z-index: 100;
+      background: rgba(0,0,0,0.7); backdrop-filter: blur(4px);
+      align-items: flex-end;
+    }
+    .modal-overlay.open { display: flex; }
+    .modal {
+      background: var(--surface); border-radius: 20px 20px 0 0;
+      width: 100%; padding: 20px 20px calc(20px + env(safe-area-inset-bottom));
+      max-height: 90vh; overflow-y: auto; -webkit-overflow-scrolling: touch;
+      animation: slideUp 0.2s ease;
+    }
+    @keyframes slideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
+    .modal-title { font-size: 18px; font-weight: 700; margin-bottom: 20px; }
+
+    .form-group { margin-bottom: 16px; }
+    .form-label { font-size: 12px; color: var(--muted); margin-bottom: 6px; display: block; font-weight: 600; letter-spacing: 0.5px; text-transform: uppercase; }
+    .form-input {
+      width: 100%; background: var(--surface2); border: 1px solid var(--border);
+      border-radius: 10px; padding: 10px 12px; color: var(--text);
+      font-size: 15px; outline: none; transition: border-color 0.15s;
+      -webkit-appearance: none;
+    }
+    .form-input:focus { border-color: var(--accent); }
+
+    .quick-tags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+    .quick-tag {
+      background: var(--surface2); border: 1px solid var(--border);
+      border-radius: 20px; padding: 4px 12px; font-size: 13px;
+      cursor: pointer; color: var(--muted); transition: all 0.15s;
+    }
+    .quick-tag:active, .quick-tag.selected {
+      background: rgba(110,231,183,0.15); border-color: var(--accent); color: var(--accent);
+    }
+
+    .sets-area { display: flex; flex-direction: column; gap: 8px; }
+    .set-row { display: flex; gap: 8px; align-items: center; }
+    .set-row .set-num { font-size: 13px; color: var(--muted); width: 28px; flex-shrink: 0; }
+    .set-row .form-input { flex: 1; padding: 8px 10px; font-size: 14px; text-align: center; }
+    .set-row .remove-set {
+      background: none; border: none; color: var(--muted); cursor: pointer;
+      font-size: 18px; padding: 0 4px; line-height: 1;
+    }
+    .add-set-btn {
+      width: 100%; padding: 8px; background: var(--surface2);
+      border: 1px dashed var(--border); border-radius: 8px;
+      color: var(--muted); font-size: 13px; cursor: pointer;
+      display: flex; align-items: center; justify-content: center; gap: 4px;
+    }
+
+    .modal-actions { display: flex; gap: 10px; margin-top: 24px; }
+    .btn-cancel {
+      flex: 1; padding: 13px; background: var(--surface2); border: 1px solid var(--border);
+      border-radius: 12px; color: var(--text); font-size: 15px; cursor: pointer;
+    }
+    .btn-save {
+      flex: 2; padding: 13px; background: var(--accent); border: none;
+      border-radius: 12px; color: #000; font-size: 15px; font-weight: 700; cursor: pointer;
+    }
+    .btn-save:active { background: var(--accent2); }
+
+    /* ===== STATS SCREEN ===== */
+    .stats-card {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--radius); padding: 16px; margin-bottom: 12px;
+    }
+    .stats-card-title { font-size: 12px; color: var(--muted); font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px; }
+    .stats-card-value { font-size: 32px; font-weight: 700; color: var(--accent); }
+    .stats-card-sub { font-size: 13px; color: var(--muted); margin-top: 4px; }
+
+    .stats-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 12px; }
+    .stats-small { font-size: 24px; }
+
+    .exercise-freq-item {
+      display: flex; justify-content: space-between; align-items: center;
+      padding: 10px 0; border-bottom: 1px solid var(--border);
+    }
+    .exercise-freq-item:last-child { border-bottom: none; }
+    .freq-bar-wrap { display: flex; align-items: center; gap: 8px; }
+    .freq-bar {
+      height: 4px; border-radius: 2px; background: var(--accent);
+      min-width: 4px; transition: width 0.3s;
+    }
+    .freq-count { font-size: 13px; color: var(--muted); }
+  </style>
+</head>
+<body>
+<div id="app">
+
+  <!-- TODAY -->
+  <div class="screen active" id="screen-today">
+    <div class="screen-header">
+      <h1>今日のトレーニング</h1>
+      <div class="sub" id="today-date-label"></div>
+    </div>
+    <div class="scroll-area" id="today-scroll">
+      <div id="today-exercises"></div>
+      <button class="add-btn" onclick="openAddModal()">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        種目を追加
+      </button>
+    </div>
+  </div>
+
+  <!-- HISTORY -->
+  <div class="screen" id="screen-history">
+    <div class="screen-header">
+      <h1>履歴</h1>
+      <div class="sub">過去のトレーニング記録</div>
+    </div>
+    <div class="scroll-area">
+      <div class="search-box">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        <input type="search" id="search-input" placeholder="種目名で検索..." oninput="renderHistory()">
+      </div>
+      <div id="history-list"></div>
+    </div>
+  </div>
+
+  <!-- STATS -->
+  <div class="screen" id="screen-stats">
+    <div class="screen-header">
+      <h1>統計</h1>
+      <div class="sub">トレーニングの記録まとめ</div>
+    </div>
+    <div class="scroll-area" id="stats-area"></div>
+  </div>
+
+  <!-- TAB BAR -->
+  <nav class="tab-bar">
+    <button class="active" onclick="switchTab('today')" id="tab-today">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+      今日
+    </button>
+    <button onclick="switchTab('history')" id="tab-history">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+      履歴
+    </button>
+    <button onclick="switchTab('stats')" id="tab-stats">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+      統計
+    </button>
+  </nav>
+</div>
+
+<!-- ADD/EDIT MODAL -->
+<div class="modal-overlay" id="modal-overlay" onclick="handleOverlayClick(event)">
+  <div class="modal" id="modal">
+    <div class="modal-title" id="modal-title">種目を追加</div>
+
+    <div class="form-group">
+      <label class="form-label">種目名</label>
+      <input class="form-input" id="input-name" type="text" placeholder="例: ベンチプレス">
+      <div class="quick-tags" id="quick-tags"></div>
+    </div>
+
+    <div class="form-group">
+      <label class="form-label">セット詳細（回数 × 重量kg）</label>
+      <div class="sets-area" id="sets-area"></div>
+      <button class="add-set-btn" onclick="addSetRow()" style="margin-top:8px">
+        + セットを追加
+      </button>
+    </div>
+
+    <div class="form-group">
+      <label class="form-label">メモ</label>
+      <input class="form-input" id="input-memo" type="text" placeholder="体調・気づきなど">
+    </div>
+
+    <div class="modal-actions">
+      <button class="btn-cancel" onclick="closeModal()">キャンセル</button>
+      <button class="btn-save" onclick="saveExercise()">保存</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ===== DATA =====
+const STORAGE_KEY = 'workout_log_v1';
+
+function loadData() {
+  try { return JSON.parse(localStorage.getItem(STORAGE_KEY)) || {}; }
+  catch { return {}; }
+}
+
+function saveData(data) {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+}
+
+function todayKey() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+}
+
+function formatDateJP(key) {
+  const [y, m, d] = key.split('-');
+  const date = new Date(+y, +m-1, +d);
+  const days = ['日','月','火','水','木','金','土'];
+  return `${y}年${+m}月${+d}日（${days[date.getDay()]}）`;
+}
+
+// ===== QUICK TAGS =====
+const QUICK_EXERCISES = [
+  'ベンチプレス','スクワット','デッドリフト','懸垂','ショルダープレス',
+  'ダンベルカール','トライセプス','レッグプレス','ラットプルダウン','ケーブルロウ',
+  'チェストフライ','サイドレイズ','腹筋','プランク','ランニング'
+];
+
+// ===== MODAL STATE =====
+let editingDate = null;
+let editingIndex = null;
+
+function openAddModal(date = null, idx = null) {
+  editingDate = date || todayKey();
+  editingIndex = idx;
+
+  document.getElementById('modal-title').textContent = idx !== null ? '種目を編集' : '種目を追加';
+
+  // Quick tags
+  const qt = document.getElementById('quick-tags');
+  qt.innerHTML = QUICK_EXERCISES.map(e =>
+    `<button class="quick-tag" onclick="selectQuickTag(this,'${e}')">${e}</button>`
+  ).join('');
+
+  let name = '', memo = '';
+  let sets = [{reps:'',weight:''}];
+
+  if (idx !== null) {
+    const data = loadData();
+    const ex = data[editingDate]?.[idx];
+    if (ex) { name = ex.name; memo = ex.memo || ''; sets = ex.sets?.length ? ex.sets : sets; }
+  }
+
+  document.getElementById('input-name').value = name;
+  document.getElementById('input-memo').value = memo;
+  renderSetRows(sets);
+
+  // Highlight quick tag if name matches
+  if (name) {
+    qt.querySelectorAll('.quick-tag').forEach(btn => {
+      if (btn.textContent === name) btn.classList.add('selected');
+    });
+  }
+
+  document.getElementById('modal-overlay').classList.add('open');
+  setTimeout(() => document.getElementById('input-name').focus(), 100);
+}
+
+function closeModal() {
+  document.getElementById('modal-overlay').classList.remove('open');
+}
+
+function handleOverlayClick(e) {
+  if (e.target === document.getElementById('modal-overlay')) closeModal();
+}
+
+function selectQuickTag(btn, name) {
+  document.querySelectorAll('.quick-tag').forEach(b => b.classList.remove('selected'));
+  btn.classList.add('selected');
+  document.getElementById('input-name').value = name;
+}
+
+// ===== SET ROWS =====
+function renderSetRows(sets) {
+  const area = document.getElementById('sets-area');
+  area.innerHTML = '';
+  sets.forEach((s, i) => {
+    const row = document.createElement('div');
+    row.className = 'set-row';
+    row.dataset.idx = i;
+    row.innerHTML = `
+      <span class="set-num">${i+1}</span>
+      <input class="form-input" type="number" inputmode="decimal" placeholder="回数" value="${s.reps}" min="1" style="text-align:center">
+      <span style="color:var(--muted);font-size:13px">×</span>
+      <input class="form-input" type="number" inputmode="decimal" placeholder="kg" value="${s.weight}" min="0" step="0.5" style="text-align:center">
+      <button class="remove-set" onclick="removeSetRow(${i})" title="削除">×</button>
+    `;
+    area.appendChild(row);
+  });
+}
+
+function getSetRowsData() {
+  return Array.from(document.querySelectorAll('#sets-area .set-row')).map(row => {
+    const inputs = row.querySelectorAll('input');
+    return { reps: inputs[0].value, weight: inputs[1].value };
+  });
+}
+
+function addSetRow() {
+  const current = getSetRowsData();
+  current.push({ reps: '', weight: '' });
+  renderSetRows(current);
+}
+
+function removeSetRow(idx) {
+  let current = getSetRowsData();
+  if (current.length <= 1) return;
+  current.splice(idx, 1);
+  renderSetRows(current);
+}
+
+// ===== SAVE =====
+function saveExercise() {
+  const name = document.getElementById('input-name').value.trim();
+  if (!name) { document.getElementById('input-name').focus(); return; }
+
+  const sets = getSetRowsData().filter(s => s.reps || s.weight);
+  if (!sets.length) sets.push({ reps: '', weight: '' });
+
+  const memo = document.getElementById('input-memo').value.trim();
+  const data = loadData();
+
+  if (!data[editingDate]) data[editingDate] = [];
+
+  const entry = { name, sets, memo, ts: Date.now() };
+
+  if (editingIndex !== null) {
+    data[editingDate][editingIndex] = entry;
+  } else {
+    data[editingDate].push(entry);
+  }
+
+  saveData(data);
+  closeModal();
+  renderToday();
+  renderHistory();
+  renderStats();
+}
+
+// ===== DELETE =====
+function deleteExercise(date, idx) {
+  if (!confirm('この種目を削除しますか？')) return;
+  const data = loadData();
+  data[date].splice(idx, 1);
+  if (!data[date].length) delete data[date];
+  saveData(data);
+  renderToday();
+  renderHistory();
+  renderStats();
+}
+
+// ===== FORMAT SET DISPLAY =====
+function formatSets(sets) {
+  if (!sets?.length) return '';
+  return sets.filter(s => s.reps || s.weight).map(s => {
+    if (s.reps && s.weight) return `<span>${s.reps}回</span> × <span>${s.weight}kg</span>`;
+    if (s.reps) return `<span>${s.reps}回</span>`;
+    if (s.weight) return `<span>${s.weight}kg</span>`;
+    return '';
+  }).filter(Boolean).join('　');
+}
+
+function formatSetsShort(sets) {
+  if (!sets?.length) return '';
+  const valid = sets.filter(s => s.reps || s.weight);
+  if (!valid.length) return '';
+  return valid.map(s => [s.reps ? s.reps+'回' : '', s.weight ? s.weight+'kg' : ''].filter(Boolean).join('×')).join('  ');
+}
+
+// ===== RENDER TODAY =====
+function renderToday() {
+  const key = todayKey();
+  const data = loadData();
+  const exercises = data[key] || [];
+
+  document.getElementById('today-date-label').textContent = formatDateJP(key);
+
+  const container = document.getElementById('today-exercises');
+  if (!exercises.length) {
+    container.innerHTML = `<div class="empty-state"><div class="emoji">💪</div><p>まだ種目がありません。<br>「種目を追加」から今日のトレーニングを記録しましょう！</p></div>`;
+    return;
+  }
+
+  container.innerHTML = exercises.map((ex, i) => `
+    <div class="exercise-card">
+      <div class="card-actions">
+        <button onclick="openAddModal('${key}',${i})" title="編集">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+        </button>
+        <button onclick="deleteExercise('${key}',${i})" title="削除">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/></svg>
+        </button>
+      </div>
+      <div class="exercise-card-header">
+        <div class="exercise-name">${esc(ex.name)}</div>
+      </div>
+      <div class="exercise-sets">${
+        (ex.sets||[]).filter(s=>s.reps||s.weight).map((s,si)=>`
+          <div class="set-pill">${si+1}set　<span>${s.reps?s.reps+'回':'-'}　${s.weight?s.weight+'kg':''}</span></div>
+        `).join('') || '<div style="font-size:13px;color:var(--muted)">セット未登録</div>'
+      }</div>
+      ${ex.memo ? `<div class="exercise-memo">${esc(ex.memo)}</div>` : ''}
+    </div>
+  `).join('');
+}
+
+// ===== RENDER HISTORY =====
+function renderHistory() {
+  const query = document.getElementById('search-input')?.value.trim().toLowerCase() || '';
+  const data = loadData();
+  const keys = Object.keys(data).sort().reverse();
+
+  const container = document.getElementById('history-list');
+
+  if (!keys.length) {
+    container.innerHTML = `<div class="empty-state"><div class="emoji">📋</div><p>まだ記録がありません</p></div>`;
+    return;
+  }
+
+  let html = '';
+  let found = false;
+
+  for (const key of keys) {
+    const exercises = data[key] || [];
+    const filtered = query
+      ? exercises.filter(ex => ex.name.toLowerCase().includes(query))
+      : exercises;
+
+    if (!filtered.length) continue;
+    found = true;
+
+    html += `<div class="history-day">
+      <div class="history-day-header">
+        <span class="history-day-date">${formatDateJP(key)}</span>
+        <span class="history-day-count">${filtered.length}種目</span>
+      </div>
+      ${filtered.map((ex, i) => {
+        const realIdx = exercises.indexOf(ex);
+        const nameHtml = query
+          ? esc(ex.name).replace(new RegExp(esc(query),'gi'), m=>`<mark class="search-highlight">${m}</mark>`)
+          : esc(ex.name);
+        return `
+          <div class="history-exercise-row" onclick="openAddModal('${key}',${realIdx})">
+            <div class="history-exercise-name">${nameHtml}</div>
+            <div class="history-exercise-detail">
+              ${ex.sets?.filter(s=>s.reps||s.weight).length ? formatSetsShort(ex.sets) : 'セット未登録'}
+              ${ex.memo ? '　📝 ' + esc(ex.memo) : ''}
+            </div>
+          </div>
+        `;
+      }).join('')}
+    </div>`;
+  }
+
+  if (!found) {
+    container.innerHTML = `<div class="empty-state"><div class="emoji">🔍</div><p>「${esc(query)}」に一致する記録が見つかりませんでした</p></div>`;
+    return;
+  }
+
+  container.innerHTML = html;
+}
+
+// ===== RENDER STATS =====
+function renderStats() {
+  const data = loadData();
+  const keys = Object.keys(data);
+
+  const totalDays = keys.length;
+  let totalExercises = 0;
+  let totalSets = 0;
+  const freqMap = {};
+
+  for (const key of keys) {
+    for (const ex of data[key]) {
+      totalExercises++;
+      const validSets = (ex.sets||[]).filter(s=>s.reps||s.weight);
+      totalSets += validSets.length;
+      freqMap[ex.name] = (freqMap[ex.name] || 0) + 1;
+    }
+  }
+
+  const top = Object.entries(freqMap).sort((a,b)=>b[1]-a[1]).slice(0,8);
+  const maxFreq = top[0]?.[1] || 1;
+
+  // streak
+  let streak = 0;
+  const d = new Date();
+  while (true) {
+    const k = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+    if (!data[k]) break;
+    streak++;
+    d.setDate(d.getDate() - 1);
+  }
+
+  const area = document.getElementById('stats-area');
+  area.innerHTML = `
+    <div class="stats-grid">
+      <div class="stats-card">
+        <div class="stats-card-title">トレーニング日数</div>
+        <div class="stats-card-value stats-small">${totalDays}</div>
+        <div class="stats-card-sub">日間</div>
+      </div>
+      <div class="stats-card">
+        <div class="stats-card-title">連続記録</div>
+        <div class="stats-card-value stats-small">${streak}</div>
+        <div class="stats-card-sub">日連続 🔥</div>
+      </div>
+    </div>
+    <div class="stats-grid">
+      <div class="stats-card">
+        <div class="stats-card-title">合計種目数</div>
+        <div class="stats-card-value stats-small">${totalExercises}</div>
+        <div class="stats-card-sub">エクサイズ</div>
+      </div>
+      <div class="stats-card">
+        <div class="stats-card-title">合計セット数</div>
+        <div class="stats-card-value stats-small">${totalSets}</div>
+        <div class="stats-card-sub">セット</div>
+      </div>
+    </div>
+
+    ${top.length ? `
+    <div class="stats-card">
+      <div class="stats-card-title">よくやる種目</div>
+      ${top.map(([name, count]) => `
+        <div class="exercise-freq-item">
+          <span style="font-size:14px;font-weight:600">${esc(name)}</span>
+          <div class="freq-bar-wrap">
+            <div class="freq-bar" style="width:${Math.max(20, count/maxFreq*80)}px"></div>
+            <span class="freq-count">${count}回</span>
+          </div>
+        </div>
+      `).join('')}
+    </div>` : `<div class="empty-state"><div class="emoji">📊</div><p>まだデータがありません</p></div>`}
+  `;
+}
+
+// ===== TABS =====
+function switchTab(name) {
+  ['today','history','stats'].forEach(t => {
+    document.getElementById('screen-'+t).classList.toggle('active', t===name);
+    document.getElementById('tab-'+t).classList.toggle('active', t===name);
+  });
+  if (name === 'history') renderHistory();
+  if (name === 'stats') renderStats();
+}
+
+// ===== UTILS =====
+function esc(str) {
+  return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// ===== INIT =====
+renderToday();
+</script>
+</body>
+</html>
