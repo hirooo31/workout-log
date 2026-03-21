@@ -660,7 +660,7 @@ function renderToday() {
     container.innerHTML = '';
     const empty = document.createElement('div');
     empty.className = 'empty-state';
-    empty.innerHTML = '<div class="emoji">💪</div>';
+    empty.innerHTML = '<div class="emoji">🔥</div>';
     const p = document.createElement('p');
     p.textContent = 'まだ種目がありません。「種目を追加」から今日のトレーニングを記録しましょう！';
     empty.appendChild(p);
@@ -959,7 +959,7 @@ function renderStats() {
 
     <div class="stats-grid">
       <div class="stats-card">
-        <div class="stats-card-title">トレーニング日数</div>
+        <div class="stats-card-title">累積トレーニング日数</div>
         <div class="stats-card-value stats-small">${totalDays}</div>
         <div class="stats-card-sub">日間</div>
       </div>
