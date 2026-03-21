@@ -150,12 +150,16 @@
     }
     .history-exercise-row {
       background: var(--surface); border: 1px solid var(--border);
-      border-radius: 10px; padding: 10px 14px; margin-bottom: 6px;
-      cursor: pointer; transition: border-color 0.15s;
+      border-radius: 10px; padding: 10px 14px; padding-right: 76px; margin-bottom: 6px;
+      position: relative;
     }
-    .history-exercise-row:active { border-color: var(--accent); }
     .history-exercise-name { font-weight: 600; font-size: 14px; }
     .history-exercise-detail { font-size: 12px; color: var(--muted); margin-top: 3px; }
+    .history-day-del {
+      background: none; border: none; cursor: pointer; padding: 4px 6px;
+      color: var(--muted); border-radius: 6px; line-height: 1;
+    }
+    .history-day-del:active { color: var(--danger); }
 
     .search-highlight { background: rgba(110,231,183,0.25); border-radius: 3px; }
 
@@ -602,6 +606,16 @@ function saveExercise() {
 }
 
 // ===== DELETE =====
+function deleteDay(date) {
+  if (!confirm(formatDateJP(date) + 'のトレーニングをすべて削除しますか？')) return;
+  const data = loadData();
+  delete data[date];
+  saveData(data);
+  renderToday();
+  renderHistory();
+  renderStats();
+}
+
 function deleteExercise(date, idx) {
   if (!confirm('この種目を削除しますか？')) return;
   const data = loadData();
@@ -756,24 +770,46 @@ function renderHistory() {
     const dateSpan = document.createElement('span');
     dateSpan.className = 'history-day-date';
     dateSpan.textContent = formatDateJP(key);
+
+    const headerRight = document.createElement('div');
+    headerRight.style.cssText = 'display:flex;align-items:center;gap:6px';
     const countSpan = document.createElement('span');
     countSpan.className = 'history-day-count';
     countSpan.textContent = filtered.length + '種目';
+    const delDayBtn = document.createElement('button');
+    delDayBtn.className = 'history-day-del';
+    delDayBtn.title = 'この日をすべて削除';
+    delDayBtn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/></svg>';
+    delDayBtn.addEventListener('click', () => deleteDay(key));
+    headerRight.appendChild(countSpan);
+    headerRight.appendChild(delDayBtn);
     dayHeader.appendChild(dateSpan);
-    dayHeader.appendChild(countSpan);
+    dayHeader.appendChild(headerRight);
     dayEl.appendChild(dayHeader);
 
     filtered.forEach(ex => {
       const realIdx = exercises.indexOf(ex);
       const row = document.createElement('div');
       row.className = 'history-exercise-row';
-      row.addEventListener('click', () => openAddModal(key, realIdx));
+
+      // Action buttons (same as today screen)
+      const actions = document.createElement('div');
+      actions.className = 'card-actions';
+      const editBtn = document.createElement('button');
+      editBtn.title = '編集';
+      editBtn.innerHTML = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>';
+      editBtn.addEventListener('click', () => openAddModal(key, realIdx));
+      const delBtn = document.createElement('button');
+      delBtn.title = '削除';
+      delBtn.innerHTML = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/></svg>';
+      delBtn.addEventListener('click', () => deleteExercise(key, realIdx));
+      actions.appendChild(editBtn);
+      actions.appendChild(delBtn);
 
       const nameEl = document.createElement('div');
       nameEl.className = 'history-exercise-name';
 
       if (query) {
-        // Highlight matching text safely using text node + mark element
         const lowerName = ex.name.toLowerCase();
         const lowerQuery = query.toLowerCase();
         let lastIdx = 0;
@@ -800,6 +836,7 @@ function renderHistory() {
         : 'セット未登録';
       detailEl.textContent = setsText + (ex.memo ? '　📝 ' + ex.memo : '');
 
+      row.appendChild(actions);
       row.appendChild(nameEl);
       row.appendChild(detailEl);
       dayEl.appendChild(row);
