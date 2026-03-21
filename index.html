@@ -968,22 +968,39 @@ function renderStats() {
       <div class="stats-card-title">バックアップ・インポート</div>
       <div style="font-size:13px;color:var(--muted);margin-bottom:4px">データをJSONファイルで保存・復元できます</div>
       <div class="backup-btns">
-        <button class="btn-backup btn-export" onclick="exportData()">⬇ エクスポート</button>
-        <button class="btn-backup btn-import" onclick="document.getElementById('import-file-input').click()">⬆ インポート</button>
+        <button class="btn-backup btn-export" onclick="exportData()">エクスポート</button>
+        <button class="btn-backup btn-import" onclick="document.getElementById('import-file-input').click()">インポート</button>
       </div>
     </div>
   `;
 }
 
 // ===== BACKUP / IMPORT =====
-function exportData() {
+async function exportData() {
   const data = loadData();
   const json = JSON.stringify(data, null, 2);
+  const filename = 'workout-log-' + todayKey() + '.json';
+
+  // iOS Safari: use Web Share API with file (iOS 15+)
+  if (navigator.share && navigator.canShare) {
+    const file = new File([json], filename, { type: 'application/json' });
+    if (navigator.canShare({ files: [file] })) {
+      try {
+        await navigator.share({ files: [file], title: 'Workout Log バックアップ' });
+        return;
+      } catch (e) {
+        if (e.name === 'AbortError') return; // user cancelled
+        // fall through to download fallback
+      }
+    }
+  }
+
+  // Desktop / Android: blob download
   const blob = new Blob([json], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = 'workout-log-' + todayKey() + '.json';
+  a.download = filename;
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
