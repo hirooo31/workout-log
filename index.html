@@ -219,6 +219,25 @@
       padding: 0 4px; line-height: 1; display: flex; align-items: center;
     }
     .set-row .dup-set:active { color: var(--accent); }
+
+    .quick-tag-custom { padding-right: 26px !important; position: relative; }
+    .qtag-remove {
+      position: absolute; right: 6px; top: 50%; transform: translateY(-50%);
+      background: none; border: none; color: var(--muted); cursor: pointer;
+      font-size: 12px; padding: 0; line-height: 1;
+    }
+    .add-tag-btn {
+      background: none; border: 1px dashed var(--border);
+      border-radius: 20px; padding: 4px 10px; font-size: 13px;
+      cursor: pointer; color: var(--muted); transition: border-color 0.15s;
+    }
+    .add-tag-btn:active { border-color: var(--accent); color: var(--accent); }
+    .add-tag-input {
+      background: var(--surface2); border: 1px solid var(--accent);
+      border-radius: 20px; padding: 4px 10px; font-size: 13px;
+      color: var(--text); outline: none; width: 90px; -webkit-appearance: none;
+    }
+
     .add-set-btn {
       width: 100%; padding: 8px; background: var(--surface2);
       border: 1px dashed var(--border); border-radius: 8px;
@@ -394,6 +413,37 @@
 <script>
 // ===== DATA =====
 const STORAGE_KEY = 'workout_log_v1';
+const CUSTOM_TAGS_KEY = 'workout_custom_tags_v1';
+
+function loadCustomTags() {
+  try { return JSON.parse(localStorage.getItem(CUSTOM_TAGS_KEY)) || []; }
+  catch { return []; }
+}
+function saveCustomTags(tags) {
+  localStorage.setItem(CUSTOM_TAGS_KEY, JSON.stringify(tags));
+}
+
+function getLastSets(name) {
+  const data = loadData();
+  const keys = Object.keys(data).sort().reverse();
+  for (const key of keys) {
+    for (const ex of (data[key] || [])) {
+      if (ex.name === name) {
+        const valid = (ex.sets || []).filter(s => s.reps || s.weight);
+        if (valid.length) return valid;
+      }
+    }
+  }
+  return null;
+}
+
+function autoFillSets(name) {
+  if (editingIndex !== null) return;
+  const current = getSetRowsData();
+  if (current.some(s => s.reps || s.weight)) return;
+  const last = getLastSets(name);
+  if (last) renderSetRows(last);
+}
 
 function loadData() {
   try { return JSON.parse(localStorage.getItem(STORAGE_KEY)) || {}; }
@@ -450,17 +500,6 @@ function openAddModal(date, idx) {
   document.getElementById('modal-title').textContent = idx !== null ? '種目を編集' : '種目を追加';
   document.getElementById('input-date').value = date;
 
-  // Quick tags
-  const qt = document.getElementById('quick-tags');
-  qt.innerHTML = '';
-  QUICK_EXERCISES.forEach(e => {
-    const btn = document.createElement('button');
-    btn.className = 'quick-tag';
-    btn.textContent = e;
-    btn.addEventListener('click', () => selectQuickTag(btn, e));
-    qt.appendChild(btn);
-  });
-
   let name = '', memo = '';
   let sets = [{reps:'',weight:''}];
 
@@ -473,12 +512,7 @@ function openAddModal(date, idx) {
   document.getElementById('input-name').value = name;
   document.getElementById('input-memo').value = memo;
   renderSetRows(sets);
-
-  if (name) {
-    qt.querySelectorAll('.quick-tag').forEach(btn => {
-      if (btn.textContent === name) btn.classList.add('selected');
-    });
-  }
+  renderQuickTags();
 
   document.getElementById('modal-overlay').classList.add('open');
   setTimeout(() => document.getElementById('input-name').focus(), 100);
@@ -496,6 +530,84 @@ function selectQuickTag(btn, name) {
   document.querySelectorAll('.quick-tag').forEach(b => b.classList.remove('selected'));
   btn.classList.add('selected');
   document.getElementById('input-name').value = name;
+  autoFillSets(name);
+}
+
+function renderQuickTags() {
+  const qt = document.getElementById('quick-tags');
+  if (!qt) return;
+  const currentName = document.getElementById('input-name')?.value || '';
+  qt.innerHTML = '';
+
+  QUICK_EXERCISES.forEach(e => {
+    const btn = document.createElement('button');
+    btn.className = 'quick-tag';
+    btn.textContent = e;
+    if (e === currentName) btn.classList.add('selected');
+    btn.addEventListener('click', () => selectQuickTag(btn, e));
+    qt.appendChild(btn);
+  });
+
+  loadCustomTags().forEach(e => {
+    const btn = document.createElement('button');
+    btn.className = 'quick-tag quick-tag-custom';
+    btn.textContent = e;
+    if (e === currentName) btn.classList.add('selected');
+    btn.addEventListener('click', () => selectQuickTag(btn, e));
+    const xBtn = document.createElement('span');
+    xBtn.className = 'qtag-remove';
+    xBtn.textContent = '×';
+    xBtn.addEventListener('click', ev => { ev.stopPropagation(); removeCustomTag(e); });
+    btn.appendChild(xBtn);
+    qt.appendChild(btn);
+  });
+
+  const addBtn = document.createElement('button');
+  addBtn.className = 'add-tag-btn';
+  addBtn.type = 'button';
+  addBtn.title = 'カスタム種目を追加';
+  addBtn.textContent = '＋';
+  addBtn.addEventListener('click', () => showAddTagInput(qt));
+  qt.appendChild(addBtn);
+}
+
+function removeCustomTag(name) {
+  saveCustomTags(loadCustomTags().filter(t => t !== name));
+  renderQuickTags();
+}
+
+function showAddTagInput(qt) {
+  const addBtn = qt.querySelector('.add-tag-btn');
+  if (!addBtn) return;
+  addBtn.style.display = 'none';
+
+  const input = document.createElement('input');
+  input.className = 'add-tag-input';
+  input.placeholder = '種目名';
+  input.maxLength = 30;
+  qt.appendChild(input);
+  input.focus();
+
+  const commit = () => {
+    const name = input.value.trim();
+    if (name) {
+      const custom = loadCustomTags();
+      const all = [...QUICK_EXERCISES, ...custom];
+      if (!all.includes(name) && custom.length < 50) {
+        custom.push(name);
+        saveCustomTags(custom);
+      }
+    }
+    input.remove();
+    addBtn.style.display = '';
+    renderQuickTags();
+  };
+
+  input.addEventListener('keydown', e => {
+    if (e.key === 'Enter') { e.preventDefault(); commit(); }
+    if (e.key === 'Escape') { input.remove(); addBtn.style.display = ''; }
+  });
+  input.addEventListener('blur', () => setTimeout(commit, 200));
 }
 
 // ===== SET ROWS =====
@@ -565,7 +677,8 @@ function getSetRowsData() {
 
 function addSetRow() {
   const current = getSetRowsData();
-  current.push({ reps: '', weight: '' });
+  const last = current[current.length - 1];
+  current.push({ reps: last.reps, weight: last.weight });
   renderSetRows(current);
 }
 
@@ -632,9 +745,31 @@ function saveExercise() {
   renderStats();
 }
 
+// ===== DELETE CONFIRM =====
+function makeDeleteConfirm(btn, callback) {
+  if (btn.dataset.confirming === '1') {
+    callback();
+    return;
+  }
+  btn.dataset.confirming = '1';
+  btn.style.color = 'var(--danger)';
+  btn.style.background = 'rgba(248,113,113,0.12)';
+  btn.style.borderRadius = '6px';
+  const origTitle = btn.title;
+  btn.title = 'もう一度タップで削除';
+  setTimeout(() => {
+    if (btn.isConnected) {
+      delete btn.dataset.confirming;
+      btn.style.color = '';
+      btn.style.background = '';
+      btn.style.borderRadius = '';
+      btn.title = origTitle;
+    }
+  }, 3000);
+}
+
 // ===== DELETE =====
 function deleteDay(date) {
-  if (!confirm(formatDateJP(date) + 'のトレーニングをすべて削除しますか？')) return;
   const data = loadData();
   delete data[date];
   saveData(data);
@@ -644,7 +779,6 @@ function deleteDay(date) {
 }
 
 function deleteExercise(date, idx) {
-  if (!confirm('この種目を削除しますか？')) return;
   const data = loadData();
   data[date].splice(idx, 1);
   if (!data[date].length) delete data[date];
@@ -711,7 +845,7 @@ function renderToday() {
     const delBtn = document.createElement('button');
     delBtn.title = '削除';
     delBtn.innerHTML = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/></svg>';
-    delBtn.addEventListener('click', () => deleteExercise(key, i));
+    delBtn.addEventListener('click', () => makeDeleteConfirm(delBtn, () => deleteExercise(key, i)));
 
     actions.appendChild(editBtn);
     actions.appendChild(delBtn);
@@ -807,7 +941,7 @@ function renderHistory() {
     delDayBtn.className = 'history-day-del';
     delDayBtn.title = 'この日をすべて削除';
     delDayBtn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/></svg>';
-    delDayBtn.addEventListener('click', () => deleteDay(key));
+    delDayBtn.addEventListener('click', () => makeDeleteConfirm(delDayBtn, () => deleteDay(key)));
     headerRight.appendChild(countSpan);
     headerRight.appendChild(delDayBtn);
     dayHeader.appendChild(dateSpan);
@@ -829,7 +963,7 @@ function renderHistory() {
       const delBtn = document.createElement('button');
       delBtn.title = '削除';
       delBtn.innerHTML = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/></svg>';
-      delBtn.addEventListener('click', () => deleteExercise(key, realIdx));
+      delBtn.addEventListener('click', () => makeDeleteConfirm(delBtn, () => deleteExercise(key, realIdx)));
       actions.appendChild(editBtn);
       actions.appendChild(delBtn);
 
