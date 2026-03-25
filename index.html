@@ -319,7 +319,10 @@
   <div class="screen active" id="screen-today">
     <div class="screen-header">
       <h1>今日のトレーニング</h1>
-      <div class="sub" id="today-date-label"></div>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-top:2px">
+        <div class="sub" id="today-date-label"></div>
+        <div id="today-volume-label" style="font-size:13px;color:var(--accent);font-weight:700"></div>
+      </div>
     </div>
     <div class="scroll-area" id="today-scroll">
       <div id="today-exercises"></div>
@@ -819,6 +822,9 @@ function renderToday() {
   const exercises = data[key] || [];
 
   document.getElementById('today-date-label').textContent = formatDateJP(key);
+  const todayVol = calcVolume({ [key]: exercises });
+  const volEl = document.getElementById('today-volume-label');
+  if (volEl) volEl.textContent = todayVol > 0 ? fmtNum(todayVol) + ' kg' : '';
 
   const container = document.getElementById('today-exercises');
 
