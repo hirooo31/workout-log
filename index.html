@@ -746,26 +746,31 @@ function saveExercise() {
 }
 
 // ===== DELETE CONFIRM =====
-function makeDeleteConfirm(btn, callback) {
-  if (btn.dataset.confirming === '1') {
-    callback();
-    return;
-  }
-  btn.dataset.confirming = '1';
-  btn.style.color = 'var(--danger)';
-  btn.style.background = 'rgba(248,113,113,0.12)';
-  btn.style.borderRadius = '6px';
-  const origTitle = btn.title;
-  btn.title = 'もう一度タップで削除';
-  setTimeout(() => {
-    if (btn.isConnected) {
-      delete btn.dataset.confirming;
-      btn.style.color = '';
-      btn.style.background = '';
-      btn.style.borderRadius = '';
-      btn.title = origTitle;
-    }
-  }, 3000);
+function makeDeleteConfirm(container, hideEls, triggerBtn, callback) {
+  hideEls.forEach(el => { el.style.display = 'none'; });
+  triggerBtn.style.display = 'none';
+
+  const cancelBtn = document.createElement('button');
+  cancelBtn.textContent = 'キャンセル';
+  cancelBtn.style.cssText = 'background:none;border:none;color:var(--muted);padding:4px 6px;font-size:12px;cursor:pointer;border-radius:6px;white-space:nowrap';
+
+  const confirmBtn = document.createElement('button');
+  confirmBtn.textContent = '削除する';
+  confirmBtn.style.cssText = 'background:rgba(248,113,113,0.15);border:1px solid var(--danger);border-radius:6px;color:var(--danger);padding:3px 8px;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap';
+
+  container.appendChild(cancelBtn);
+  container.appendChild(confirmBtn);
+
+  const restore = () => {
+    cancelBtn.remove();
+    confirmBtn.remove();
+    hideEls.forEach(el => { el.style.display = ''; });
+    triggerBtn.style.display = '';
+  };
+
+  const timer = setTimeout(restore, 4000);
+  confirmBtn.addEventListener('click', () => { clearTimeout(timer); callback(); });
+  cancelBtn.addEventListener('click', () => { clearTimeout(timer); restore(); });
 }
 
 // ===== DELETE =====
@@ -845,7 +850,7 @@ function renderToday() {
     const delBtn = document.createElement('button');
     delBtn.title = '削除';
     delBtn.innerHTML = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/></svg>';
-    delBtn.addEventListener('click', () => makeDeleteConfirm(delBtn, () => deleteExercise(key, i)));
+    delBtn.addEventListener('click', () => makeDeleteConfirm(actions, [editBtn], delBtn, () => deleteExercise(key, i)));
 
     actions.appendChild(editBtn);
     actions.appendChild(delBtn);
@@ -941,7 +946,7 @@ function renderHistory() {
     delDayBtn.className = 'history-day-del';
     delDayBtn.title = 'この日をすべて削除';
     delDayBtn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/></svg>';
-    delDayBtn.addEventListener('click', () => makeDeleteConfirm(delDayBtn, () => deleteDay(key)));
+    delDayBtn.addEventListener('click', () => makeDeleteConfirm(headerRight, [countSpan], delDayBtn, () => deleteDay(key)));
     headerRight.appendChild(countSpan);
     headerRight.appendChild(delDayBtn);
     dayHeader.appendChild(dateSpan);
@@ -963,7 +968,7 @@ function renderHistory() {
       const delBtn = document.createElement('button');
       delBtn.title = '削除';
       delBtn.innerHTML = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/></svg>';
-      delBtn.addEventListener('click', () => makeDeleteConfirm(delBtn, () => deleteExercise(key, realIdx)));
+      delBtn.addEventListener('click', () => makeDeleteConfirm(actions, [editBtn], delBtn, () => deleteExercise(key, realIdx)));
       actions.appendChild(editBtn);
       actions.appendChild(delBtn);
 
